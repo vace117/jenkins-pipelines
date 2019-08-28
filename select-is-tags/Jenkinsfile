@@ -20,7 +20,7 @@ try {
         stage("Get Tags") {
           timeout(time: 20, unit: 'MINUTES') {
             openshift.withCluster() {
-              openshift.withProject("${env.PROJECT_NAME") {
+              openshift.withProject("${env.PROJECT_NAME}") {
                 def tags = getTags()
                 echo tags
               }
