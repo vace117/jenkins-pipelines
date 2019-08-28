@@ -1,6 +1,6 @@
 import groovy.json.JsonSlurper
 
-dev tags = new ArrayList()
+def tags = new ArrayList()
 def retrievedTags = ""
 
 try {
