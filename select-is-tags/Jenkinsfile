@@ -3,7 +3,7 @@ import groovy.json.JsonSlurper
 def getTags() {
     echo "In getTags.  IS: ${env.IMAGE_STREAM}"
     echo "In getTags.  Project: ${env.PROJECT_NAME}"
-    def cmd = [ 'bash', '-c', "oc get is ${env.IMAGE_STREAM} -o json -n ${env.PROJECT_NAME}".toString()]
+    def cmd = [ 'bash', '-c', "oc get is openshift-openjdk18-openshift -o json -n cicd".toString()]
     def result = cmd.execute().text
     def slurper = new JsonSlurper()
     def json = slurper.parseText(result)
