@@ -3,7 +3,7 @@ import groovy.json.JsonSlurper
 def rtags = ""
 
 def getTags() {
-    def cmd = [ 'bash', '-c', "oc get is redhat-openjdk18-openshift -o json -n cicd".toString() ]
+    def cmd = [ 'bash', '-c', "oc get is redhat-openjdk18-openshift -o json -n ${env.PROJECT_NAME}".toString() ]
     def result = cmd.execute().text
     echo "Result: ${result}"
     def slurper = new JsonSlurper()
