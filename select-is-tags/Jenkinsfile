@@ -11,9 +11,10 @@ try {
         }
         stage("Get Tags") {
             openshift.withCluster() {
-                openshift.withProject('cicd') {
-                    def cmd = [ 'bash', '-c', "oc get is openshift-openjdk18-openshift -o json -n cicd".toString()]
+                openshift.withProject('andrew') {
+                    def cmd = [ 'bash', '-c', "oc get is openshift-openjdk18-openshift -o json -n andrew".toString()]
                     def result = cmd.execute().text
+                    echo "Result: ${result}"
                     def slurper = new JsonSlurper()
                     def json = slurper.parseText(result)
                     if (json.spec.tags == null || json.spec.tags.size == 0) {
