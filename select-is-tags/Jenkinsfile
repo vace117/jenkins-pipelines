@@ -27,8 +27,8 @@ try {
           timeout(time: 20, unit: 'MINUTES') {
             openshift.withCluster() {
               openshift.withProject("${env.PROJECT_NAME}") {
-                def tags = getTags()
-                echo tags
+                def retrievedTags = getTags()
+                echo retrievedTags
               }
             }  
           }
@@ -39,7 +39,7 @@ try {
               def INPUT_PARAMS = input message: 'Please Provide Parameters', ok: 'Next',
                                 parameters: [
                                 choice(name: 'ENVIRONMENT', choices: ['dev','qa'].join('\n'), description: 'Please select the Environment'),
-                                choice(name: 'IMAGE_TAG', choices: tags, description: 'Available Versions')]
+                                choice(name: 'IMAGE_TAG', choices: retrievedTags, description: 'Available Versions')]
                 env.ENVIRONMENT = INPUT_PARAMS.ENVIRONMENT
                 env.IMAGE_TAG = INPUT_PARAMS.IMAGE_TAG
             }
