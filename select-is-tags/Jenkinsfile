@@ -11,7 +11,7 @@ def getTags() {
     def tags = new ArrayList()
     if (json.spec.tags == null || json.spec.tags.size == 0) {
       tags.add("unable to fetch tags for pipeline-tags")
-    } else {
+    } else {d
       json.spec.tags.each { tags.add(it.name) }
     }
     return tags.join('\n')
