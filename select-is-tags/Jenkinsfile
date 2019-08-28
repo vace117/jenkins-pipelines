@@ -17,6 +17,10 @@ def getTags() {
 try {
   timeout(time: 20, unit: 'MINUTES') {
       node {
+        stage("Init") {
+            echo "Project: ${env.PROJECT_NAME}"
+            echo "ImageStream: ${env.IMAGE_STREAM}"    
+        }
         stage("Get Tags") {
           timeout(time: 20, unit: 'MINUTES') {
             openshift.withCluster() {
