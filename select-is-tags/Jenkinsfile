@@ -4,52 +4,51 @@ def tags = new ArrayList()
 def retrievedTags = ""
 
 try {
-  timeout(time: 20, unit: 'MINUTES') {
-      node {
+    node {
         stage("Init") {
             echo "Project: ${env.PROJECT_NAME}"
             echo "ImageStream: ${env.IMAGE_STREAM}"    
         }
         stage("Get Tags") {
-          timeout(time: 20, unit: 'MINUTES') {
             openshift.withCluster() {
-              openshift.withProject('cicd') {
-                def cmd = [ 'bash', '-c', "oc get is openshift-openjdk18-openshift -o json -n cicd".toString()]
-                def result = cmd.execute().text
-                def slurper = new JsonSlurper()
-                def json = slurper.parseText(result)
-                if (json.spec.tags == null || json.spec.tags.size == 0) {
-                  tags.add("unable to fetch tags for pipeline-tags")
-                } else {
-                  json.spec.tags.each { tags.add(it.name) }
+                openshift.withProject('cicd') {
+                    def cmd = [ 'bash', '-c', "oc get is openshift-openjdk18-openshift -o json -n cicd".toString()]
+                    def result = cmd.execute().text
+                    def slurper = new JsonSlurper()
+                    def json = slurper.parseText(result)
+                    if (json.spec.tags == null || json.spec.tags.size == 0) {
+                        tags.add("unable to fetch tags for pipeline-tags")
+                    } else {
+                        json.spec.tags.each {
+                            tags.add(it.name) 
+                        }
+                    }
+                    retrievedTags = tags.join('\n')
+                    echo retrievedTags
                 }
-                retrievedTags = tags.join('\n')
-                echo retrievedTags
-              }
             }  
-          }
         }
         stage("Get User Input") {
             script {
                 // Show the select input modal
               def INPUT_PARAMS = input message: 'Please Provide Parameters', ok: 'Next',
-                                parameters: [
-                                choice(name: 'ENVIRONMENT', choices: ['dev','qa'].join('\n'), description: 'Please select the Environment'),
-                                choice(name: 'IMAGE_TAG', choices: retrievedTags, description: 'Available Versions')]
-                env.ENVIRONMENT = INPUT_PARAMS.ENVIRONMENT
-                env.IMAGE_TAG = INPUT_PARAMS.IMAGE_TAG
+                  parameters: [
+                      choice(name: 'ENVIRONMENT', choices: ['dev','qa'].join('\n'), description: 'Please select the Environment'),
+                      choice(name: 'IMAGE_TAG', choices: retrievedTags, description: 'Available Versions')
+                  ]
+              env.ENVIRONMENT = INPUT_PARAMS.ENVIRONMENT
+              env.IMAGE_TAG = INPUT_PARAMS.IMAGE_TAG
             }
         }
-        stage("Use Input") {
+        stage("Echo Input") {
             script {
                 echo "User input: ${env.IMAGE_TAG}"
             }
         }
-      }
-  }
+    }
 } catch (err) {
-  echo "in catch block"
-  echo "Caught: ${err}"
-  currentBuild.result = 'FAILURE'
-  throw err
+    echo "in catch block"
+    echo "Caught: ${err}"
+    currentBuild.result = 'FAILURE'
+    throw err
 }
