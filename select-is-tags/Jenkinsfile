@@ -13,7 +13,7 @@ try {
         stage("Get Tags") {
           timeout(time: 20, unit: 'MINUTES') {
             openshift.withCluster() {
-              openshift.withProject("${env.PROJECT_NAME}") {
+              openshift.withProject('cicd') {
                 def cmd = [ 'bash', '-c', "oc get is openshift-openjdk18-openshift -o json -n cicd".toString()]
                 def result = cmd.execute().text
                 def slurper = new JsonSlurper()
