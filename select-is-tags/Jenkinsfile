@@ -1,0 +1,53 @@
+import groovy.json.JsonSlurper
+
+def getTags() {
+    def cmd = [ 'bash', '-c', "oc get is ${env.IMAGE_STREAM} -o json -n ${env.PROJECT_NAME}".toString()]
+    def result = cmd.execute().text
+    def slurper = new JsonSlurper()
+    def json = slurper.parseText(result)
+    def tags = new ArrayList()
+    if (json.spec.tags == null || json.spec.tags.size == 0) {
+      tags.add("unable to fetch tags for pipeline-tags")
+    } else {
+      json.spec.tags.each { tags.add(it.name) }
+    }
+    return tags.join('\n')
+}
+
+try {
+  timeout(time: 20, unit: 'MINUTES') {
+      node {
+        stage("Get Tags") {
+          timeout(time: 20, unit: 'MINUTES') {
+            openshift.withCluster() {
+              openshift.withProject("${env.PROJECT_NAME") {
+                def tags = getTags()
+                echo tags
+              }
+            }  
+          }
+        }
+        stage("Get User Input") {
+            script {
+                // Show the select input modal
+              def INPUT_PARAMS = input message: 'Please Provide Parameters', ok: 'Next',
+                                parameters: [
+                                choice(name: 'ENVIRONMENT', choices: ['dev','qa'].join('\n'), description: 'Please select the Environment'),
+                                choice(name: 'IMAGE_TAG', choices: tags, description: 'Available Versions')]
+                env.ENVIRONMENT = INPUT_PARAMS.ENVIRONMENT
+                env.IMAGE_TAG = INPUT_PARAMS.IMAGE_TAG
+            }
+        }
+        stage("Use Input") {
+            script {
+                echo "User input: ${env.IMAGE_TAG}"
+            }
+        }
+      }
+  }
+} catch (err) {
+  echo "in catch block"
+  echo "Caught: ${err}"
+  currentBuild.result = 'FAILURE'
+  throw err
+}
