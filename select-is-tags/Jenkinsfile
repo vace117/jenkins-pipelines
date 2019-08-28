@@ -3,7 +3,9 @@ import groovy.json.JsonSlurper
 def rtags = ""
 
 def getTags() {
-    def cmd = [ 'bash', '-c', "oc get is ${env.IMAGE_STREAM} -o json -n ${env.PROJECT_NAME}".toString() ]
+    def ocGetIs = "oc get is ${env.IMAGE_STREAM} -o json -n ${env.PROJECT_NAME}"
+    echo "Command: ${ocGetIs}"
+    def cmd = [ 'bash', '-c', "${ocGetIs}".toString() ]
     def result = cmd.execute().text
     echo "Result: ${result}"
     def slurper = new JsonSlurper()
