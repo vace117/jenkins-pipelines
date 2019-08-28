@@ -11,3 +11,5 @@ oc tag docker.io/openshift/hello-openshift:v3.8 hello-openshift:v3.8
 oc tag docker.io/openshift/hello-openshift:v3.9 hello-openshift:v3.9
 oc new-build https://github.com/pittar/jenkins-pipelines --context-dir=select-is-tags --build-env IMAGE_STREAM=hello-openshift --build-env PROJECT_NAME=jenkins-test --name=pipelines
 ```
+
+The first **three** builds will fail.  Each build will encounter a new method that needs to be whitelisted by an admin.  The logs should have a link that you can click on to add the exception.
