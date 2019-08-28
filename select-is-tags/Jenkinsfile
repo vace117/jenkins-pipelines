@@ -3,9 +3,7 @@ import groovy.json.JsonSlurper
 def rtags = ""
 
 def getTags() {
-    def ocGetIs = "oc get is ${env.IMAGE_STREAM} -o json -n ${env.PROJECT_NAME}"
-    echo "Command: ${ocGetIs}"
-    def cmd = [ 'bash', '-c', "${ocGetIs}".toString() ]
+    def cmd = [ 'bash', '-c', "oc get is ${env.IMAGE_STREAM} -o json -n ${env.PROJECT_NAME}".toString() ]
     def result = cmd.execute().text
     echo "Result: ${result}"
     def slurper = new JsonSlurper()
@@ -25,7 +23,7 @@ try {
         stage("Get Tags") {
           timeout(time: 20, unit: 'MINUTES') {
             openshift.withCluster() {
-              openshift.withProject('cicd') {
+              openshift.withProject("${env.PROJECT_NAME}") {
                 rtags = getTags()
                 echo rtags
               }

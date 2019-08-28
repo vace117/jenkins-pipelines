@@ -1,0 +1,14 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<scriptApproval plugin="script-security@1.62">
+  <approvedScriptHashes/>
+  <approvedSignatures>
+    <string>new java.util.ArrayList</string>
+    <string>staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods execute java.util.List</string>
+    <string>staticMethod org.codehaus.groovy.runtime.ProcessGroovyMethods getText java.lang.Process</string>
+  </approvedSignatures>
+  <aclApprovedSignatures/>
+  <approvedClasspathEntries/>
+  <pendingScripts/>
+  <pendingSignatures/>
+  <pendingClasspathEntries/>
+</scriptApproval>
