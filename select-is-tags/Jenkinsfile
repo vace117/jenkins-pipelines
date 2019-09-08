@@ -42,7 +42,7 @@ try {
                 ]
 
                 echo "============================="
-                echo INPUT_PARAMS
+                echo INPUT_PARAMS.toString()
                 echo "============================="
                 
                 env.ENVIRONMENT = INPUT_PARAMS.ENVIRONMENT
