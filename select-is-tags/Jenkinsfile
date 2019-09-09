@@ -1,6 +1,6 @@
 import groovy.json.JsonSlurper
 
-def rtags = ""
+def availableTags = ""
 
 def getTags() {
     // Get ImageStream data in JSON format
@@ -38,26 +38,27 @@ try {
       timeout(time: 20, unit: 'SECONDS') {
         openshift.withCluster() {
           openshift.withProject("${env.PROJECT_NAME}") {
-            rtags = getTags()
-            echo rtags
+            availableTags = getTags()
           }
         }  
       }
     }
     stage("Get User Input") {
         timeout(time: 5, unit: 'MINUTES') {
+          echo "Waiting for user to select a tag..."
+
             // Show the select input modal
-          Map<String, String> userInput = input(message: 'Please Provide Parameters', ok: 'Next', parameters: 
+          String selectedTag = input(message: 'Please Provide Parameters', ok: 'Next', parameters: 
             [
-              choice(name: 'IMAGE_TAG', choices: rtags, description: 'Available Versions')
+              choice(name: 'IMAGE_TAG', choices: availableTags, description: 'Available Versions')
             ]
           )
 
           echo "============================="
-          echo userInput.toString()
+          echo "User selected: ${selectedTag}"
           echo "============================="
           
-          env.IMAGE_TAG = userInput.IMAGE_TAG
+          env.IMAGE_TAG = selectedTag
         }
     }
     stage("Use Input") {
