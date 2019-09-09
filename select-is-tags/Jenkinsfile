@@ -18,42 +18,38 @@ def getTags() {
 }
 
 try {
-  timeout(time: 20, unit: 'MINUTES') {
-      node {
-        stage("Get Tags") {
-          timeout(time: 20, unit: 'MINUTES') {
-            openshift.withCluster() {
-              openshift.withProject("${env.PROJECT_NAME}") {
-                rtags = getTags()
-                echo rtags
-              }
-            }  
+  node {
+    stage("Get Tags") {
+      timeout(time: 20, unit: 'SECONDS') {
+        openshift.withCluster() {
+          openshift.withProject("${env.PROJECT_NAME}") {
+            rtags = getTags()
+            echo rtags
           }
-        }
-        stage("Get User Input") {
-            script {
-                // Show the select input modal
-              Map<String, String> userInput = input(message: 'Please Provide Parameters', ok: 'Next', parameters: 
-                [
-                  choice(name: 'ENVIRONMENT', choices: ['dev','qa'].join('\n'), description: 'Please select the Environment'),
-                  choice(name: 'IMAGE_TAG', choices: rtags, description: 'Available Versions')
-                ]
-              )
-
-              echo "============================="
-              echo userInput.toString()
-              echo "============================="
-              
-              env.ENVIRONMENT = userInput.ENVIRONMENT
-              env.IMAGE_TAG = userInput.IMAGE_TAG
-            }
-        }
-        stage("Use Input") {
-            script {
-                echo "User input: ${env.IMAGE_TAG}"
-            }
-        }
+        }  
       }
+    }
+    stage("Get User Input") {
+        timeout(time: 5, unit: 'MINUTES') {
+            // Show the select input modal
+          Map<String, String> userInput = input(message: 'Please Provide Parameters', ok: 'Next', parameters: 
+            [
+              choice(name: 'ENVIRONMENT', choices: ['dev','qa'].join('\n'), description: 'Please select the Environment'),
+              choice(name: 'IMAGE_TAG', choices: rtags, description: 'Available Versions')
+            ]
+          )
+
+          echo "============================="
+          echo userInput.toString()
+          echo "============================="
+          
+          env.ENVIRONMENT = userInput.ENVIRONMENT
+          env.IMAGE_TAG = userInput.IMAGE_TAG
+        }
+    }
+    stage("Use Input") {
+        echo "User input: ${env.IMAGE_TAG}"
+    }
   }
 } catch (err) {
   echo "in catch block"
