@@ -3,24 +3,33 @@ import groovy.json.JsonSlurper
 def rtags = ""
 
 def getTags() {
-    // def cmd = [ 'bash', '-c', "oc get is ${env.IMAGE_STREAM} -o json -n ${env.PROJECT_NAME}".toString() ]
-    // def result = cmd.execute().text
-
+    // Get ImageStream data in JSON format
+    //
     String result = sh(
-          returnStdout: true, 
-          script: "oc get is ${env.IMAGE_STREAM} -o json -n ${env.PROJECT_NAME}".toString()
+      returnStdout: true, 
+      script: "oc get is ${env.IMAGE_STREAM} -o json -n ${env.PROJECT_NAME}".toString()
     )
 
-    echo "Result: ${result}"
-    def slurper = new JsonSlurper()
-    def json = slurper.parseText(result)
-    def tags = new ArrayList()
-    if (json.spec.tags == null || json.spec.tags.size == 0) {
-      tags.add("unable to fetch tags for pipeline-tags")
-    } else {
-      json.spec.tags.each { tags.add(it.name) }
+    // Parse JSON into a list of '\n' separated tags
+    //echo "Result: ${result}"
+    def json = new JsonSlurper().parseText(result)
+    if ( json.spec.tags?.isEmpty() ) {
+      error("Unable to fetch tags from '${env.IMAGE_STREAM}' ImageStream, in Project '${env.PROJECT_NAME}'")
     }
-    return tags.join('\n')
+    else {
+      String parsedOutTags = json.spec.tags.collect { it.name }.join('\n')
+      echo "Available tags: ${parsedOutTags}"
+
+      return parsedOutTags
+    }
+
+
+    // if (json.spec.tags == null || json.spec.tags.size == 0) {
+    //   availableTags.add("unable to fetch tags for pipeline-tags")
+    // } else {
+    //   json.spec.tags.each { availableTags.add(it.name) }
+    // }
+    // return availableTags.join('\n')
 }
 
 try {
@@ -40,7 +49,6 @@ try {
             // Show the select input modal
           Map<String, String> userInput = input(message: 'Please Provide Parameters', ok: 'Next', parameters: 
             [
-              choice(name: 'ENVIRONMENT', choices: ['dev','qa'].join('\n'), description: 'Please select the Environment'),
               choice(name: 'IMAGE_TAG', choices: rtags, description: 'Available Versions')
             ]
           )
@@ -49,7 +57,6 @@ try {
           echo userInput.toString()
           echo "============================="
           
-          env.ENVIRONMENT = userInput.ENVIRONMENT
           env.IMAGE_TAG = userInput.IMAGE_TAG
         }
     }
