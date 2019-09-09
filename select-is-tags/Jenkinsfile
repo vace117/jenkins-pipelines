@@ -1,6 +1,6 @@
 import groovy.json.JsonSlurper
 
-def availableTags = ""
+String availableTags = "NOT FETCHED"
 
 /**
  * Returns a list of '\n' separated tags available in the specified image stream
@@ -8,64 +8,60 @@ def availableTags = ""
 String fetchImageStreamTags(String imageStreamName) {
     // Get ImageStream data in JSON format
     //
-    String result = sh(
-      returnStdout: true, 
-      script: "oc get is ${imageStreamName} -o json".toString()
+    String result = sh( 
+      script: "oc get is ${imageStreamName} -o json", 
+      returnStdout: true 
     )
 
     // Parse JSON
     //
-    def json = new JsonSlurper().parseText(result)
-    if ( json.spec.tags?.isEmpty() ) {
-      error("Unable to fetch tags from '${imageStreamName}' ImageStream, in Project '${env.PROJECT_NAME}'")
-    }
-    else {
-      String parsedOutTags = json.spec.tags.collect { it.name }.join('\n')
+    List tags = new JsonSlurper().parseText(result).spec?.tags
+    if ( tags && !tags.isEmpty() ) {
+      String parsedOutTags = tags
+                              .collect { it.name }
+                              .join('\n');
       
       echo """
-      ========= Available Tags =========
-      ${parsedOutTags}
-      ==================================
-      """
-
+========= Available Tags =========
+${parsedOutTags}
+==================================
+"""
       return parsedOutTags
     }
-
-
-    // if (json.spec.tags == null || json.spec.tags.size == 0) {
-    //   availableTags.add("unable to fetch tags for pipeline-tags")
-    // } else {
-    //   json.spec.tags.each { availableTags.add(it.name) }
-    // }
-    // return availableTags.join('\n')
+    else {
+      error("Could not fetch any tags from Project: '${env.PROJECT_NAME}', ImageStream: '${imageStreamName}'")
+    }
 }
 
 try {
   node {
-    stage("Get Tags") {
+    stage("Fetch Image Tags") {
       timeout(time: 20, unit: 'SECONDS') {
         openshift.withCluster() {
           openshift.withProject(env.PROJECT_NAME) {
-            String availableTags = fetchImageStreamTags(env.IMAGE_STREAM)
+            availableTags = fetchImageStreamTags(env.IMAGE_STREAM)
           }
         }  
       }
     }
-    stage("Get User Input") {
+    stage("User Action: Image Tag Selection") {
         timeout(time: 5, unit: 'MINUTES') {
           echo "Waiting for user to select a tag..."
 
             // Show the select input modal
-          String selectedTag = input(message: 'Please Provide Parameters', ok: 'Next', parameters: 
-            [
-              choice(name: 'IMAGE_TAG', choices: availableTags, description: 'Available Versions')
+          String selectedTag = input(
+            message: 'Please Provide Parameters', 
+            ok: 'Next', 
+            parameters: [
+              choice(name: 'IMAGE_TAG', choices: availableTags, description: 'Select the Build Number you wish to deploy')
             ]
           )
 
-          echo "============================="
-          echo "User selected: ${selectedTag}"
-          echo "============================="
-          
+          echo """
+=============================
+User selected tag: ${selectedTag}
+=============================
+"""
           env.IMAGE_TAG = selectedTag
         }
     }
