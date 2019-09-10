@@ -1,9 +1,15 @@
 import groovy.json.JsonSlurper
 import net.sf.json.JSONObject
+import groovy.json.JsonBuilder
 
 String userSelectedTag = null
 
 env.IMAGE_STREAM_METADATA_FILE = 'image-stream-metadata.json'
+
+/**
+ * 
+ */
+String _debugPrintObject(object) { new JsonBuilder(object).toPrettyString() }
 
 /**
  * Saves ImageStream metadata for the given name into a file in the workspace
@@ -28,7 +34,7 @@ void initImageStreamMetaData(String imageStreamName) {
  * Reads ImageStream metadata from file
  */
 def getImageStreamMetadata() {
-  readJSON(file: IMAGE_STREAM_METADATA_FILE)
+  readJSON(file: env.IMAGE_STREAM_METADATA_FILE)
 }
 
 /**
@@ -53,35 +59,11 @@ ${parsedOutTags}
     }
 }
 
-String extractDockerImageReferenceForTag(String selectedTag) {
-    List tags = getImageStreamMetadata().status?.tags
-    if ( tags && !tags.isEmpty() ) {
-      def tagMetadata = tags.find { it.tag == selectedTag };
-
-      if ( tagMetadata && tagMetadata.items && !tagMetadata.items.isEmpty() ) {
-        if ( tagMetadata.items.size() == 1 ) {
-          String dockerImageReference = tagMetadata.items[0].dockerImageReference
-          echo "Successfully extracted dockerImageReference: ${dockerImageReference} for tag '${selectedTag}'"
-
-          return dockerImageReference
-        }
-        else {
-          error("There are more than one metadata items for Tag '${selectedTag}'. Don't know which one to use...")
-        }
-      }
-      else {
-        error("Unable to locate metadata for User Selected Tag: '${selectedTag}'")
-      }
-    }
-    else {
-      error("Tag status is missing from the ImageStream data!")
-    }
-}
 
 
-/**
- * Pipeline code starts here
- */
+/** ************************************************************************************
+ *                               Pipeline code starts here
+ * *************************************************************************************/
 try {
   node {
 
@@ -102,34 +84,100 @@ try {
         timeout(time: 5, unit: 'MINUTES') {
           echo "Waiting for user to select a tag..."
 
-          // Pops up a window to collect user input
+          // Pops up a window with a drop-down to collect user input
           //
-          userSelectedTag = input(
-            message: 'Please Provide Parameters', 
-            ok: 'Next', 
-            parameters: [
-              choice(name: 'IMAGE_TAG', choices: extractImageStreamTags(), description: 'Select the Build Number you wish to deploy')
-            ]
-          )
+          userSelectedTag = "Build-6.3.0.VALTOR"
+          // userSelectedTag = input(
+          //   message: 'Please Provide Parameters', 
+          //   ok: 'Next', 
+          //   parameters: [
+          //     choice(name: 'IMAGE_TAG', choices: extractImageStreamTags(), description: 'Select the Build Number you wish to deploy')
+          //   ]
+          // )
         }
     }
     
     
-    stage("Pull Selected Docker Image") {
+    stage("Run DB Migrations") {
         echo """
 =============================
 User selected tag: ${userSelectedTag}
 =============================
 """
+        String migrationsJobName = "${env.IMAGE_STREAM}-job"
 
-        String dockerImageReference = extractDockerImageReferenceForTag(userSelectedTag);
+        timeout(time: 5, unit: 'MINUTES') {
+          openshift.withCluster() {
+            openshift.withProject(env.PROJECT_NAME) {
 
-        // This doesn't work b/c 'docker' command is not installed
-        //
-        docker.image(dockerImageReference).withRun("-e DB_ENV_NAME=gen12dvu_test -e FLYWAY_TASKS=info") {
-          // Nothing really
+              // Delete this job if it already exists
+              //
+              def jobSelector = openshift.selector("job", migrationsJobName)
+              if ( jobSelector.exists() ) {
+                echo "Deleting pre-existing ${migrationsJobName}..."
+                jobSelector.delete()
+              }
+
+              // Create and run the job
+              //
+              def jobDefinition = [
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": [
+                  "name": migrationsJobName,
+                  "namespace": env.PROJECT_NAME
+                ],
+                "spec": [
+                  "backoffLimit": 1,
+                  "completions": 1,
+                  "parallelism": 1,
+                  "template": [
+                    "metadata": [
+                      "labels": 
+                      [
+                        "job-name": migrationsJobName,
+                        "run": migrationsJobName
+                      ]
+                    ],
+                    "spec": [
+                      "containers": [
+                        [
+                          "env": [
+                            ["name": "DB_ENV_NAME",  "value": "gen12dvu_test"],
+                            ["name": "FLYWAY_TASKS", "value": "info"]
+                          ],
+                          "image": "${env.IMAGE_STREAM}:${userSelectedTag}",
+                          "imagePullPolicy": "IfNotPresent",
+                          "name": migrationsJobName
+                        ]
+                      ],
+                      "restartPolicy": "Never"
+                    ]
+                  ]
+                ]
+              ]
+
+              jobSelector = openshift.create( jobDefinition )
+              echo "Job Created:"
+              jobSelector.describe()
+
+              // Get the Pod scheduled to run this job, and wait for it to run or fail
+              //
+              echo "Finding related pod:"
+              def podSelector = jobSelector.related( 'pods' )
+              podSelector.describe()
+              podSelector.untilEach {
+                ['Running', 'Failed'].contains(it.object().status.phase)
+              }
+
+              // Follow the logs of this pod
+              //
+              def migrationResult = podSelector.logs("--follow")
+              // echo "Log Command:\n    ${migrationResult.actions[0].cmd}"
+              // echo "Log Output: \n    ${_debugPrintObject(migrationResult)}"
+            }
+          }
         }
-
     }
 
 
