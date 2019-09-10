@@ -1,11 +1,14 @@
 import groovy.json.JsonSlurper
+import net.sf.json.JSONObject
 
-String availableTags = "NOT FETCHED"
+String userSelectedTag = null
+
+env.IMAGE_STREAM_METADATA_FILE = 'image-stream-metadata.json'
 
 /**
- * Returns a list of '\n' separated tags available in the specified image stream
+ * Saves ImageStream metadata for the given name into a file in the workspace
  */
-String fetchImageStreamTags(String imageStreamName) {
+void initImageStreamMetaData(String imageStreamName) {
     // Get ImageStream data in JSON format
     //
     String result = sh( 
@@ -13,9 +16,26 @@ String fetchImageStreamTags(String imageStreamName) {
       returnStdout: true 
     )
 
-    // Parse JSON
+    // Save the data into a file in our workspace. This allows us to easily access this info from anywhere in the build
     //
-    List tags = new JsonSlurper().parseText(result).spec?.tags
+    writeJSON(
+      file: env.IMAGE_STREAM_METADATA_FILE, 
+      json: new JSONObject(new JsonSlurper().parseText(result))
+    )
+}
+
+/**
+ * Reads ImageStream metadata from file
+ */
+def getImageStreamMetadata() {
+  readJSON(file: IMAGE_STREAM_METADATA_FILE)
+}
+
+/**
+ * Returns a list of '\n' separated tags available in the specified image stream
+ */
+String extractImageStreamTags() {
+    List tags = getImageStreamMetadata().spec?.tags
     if ( tags && !tags.isEmpty() ) {
       String parsedOutTags = tags
                               .collect { it.name }
@@ -33,41 +53,86 @@ ${parsedOutTags}
     }
 }
 
+String extractDockerImageReferenceForTag(String selectedTag) {
+    List tags = getImageStreamMetadata().status?.tags
+    if ( tags && !tags.isEmpty() ) {
+      def tagMetadata = tags.find { it.tag == selectedTag };
+
+      if ( tagMetadata && tagMetadata.items && !tagMetadata.items.isEmpty() ) {
+        if ( tagMetadata.items.size() == 1 ) {
+          String dockerImageReference = tagMetadata.items[0].dockerImageReference
+          echo "Successfully extracted dockerImageReference: ${dockerImageReference} for tag '${selectedTag}'"
+
+          return dockerImageReference
+        }
+        else {
+          error("There are more than one metadata items for Tag '${selectedTag}'. Don't know which one to use...")
+        }
+      }
+      else {
+        error("Unable to locate metadata for User Selected Tag: '${selectedTag}'")
+      }
+    }
+    else {
+      error("Tag status is missing from the ImageStream data!")
+    }
+}
+
+
+/**
+ * Pipeline code starts here
+ */
 try {
   node {
+
     stage("Fetch Image Tags") {
       timeout(time: 20, unit: 'SECONDS') {
         openshift.withCluster() {
           openshift.withProject(env.PROJECT_NAME) {
-            availableTags = fetchImageStreamTags(env.IMAGE_STREAM)
+            // Initialize ImageStream metadata
+            //
+            initImageStreamMetaData(env.IMAGE_STREAM);
           }
         }  
       }
     }
+    
+    
     stage("User Action: Image Tag Selection") {
         timeout(time: 5, unit: 'MINUTES') {
           echo "Waiting for user to select a tag..."
 
-            // Show the select input modal
-          String selectedTag = input(
+          // Pops up a window to collect user input
+          //
+          userSelectedTag = input(
             message: 'Please Provide Parameters', 
             ok: 'Next', 
             parameters: [
-              choice(name: 'IMAGE_TAG', choices: availableTags, description: 'Select the Build Number you wish to deploy')
+              choice(name: 'IMAGE_TAG', choices: extractImageStreamTags(), description: 'Select the Build Number you wish to deploy')
             ]
           )
-
-          echo """
-=============================
-User selected tag: ${selectedTag}
-=============================
-"""
-          env.IMAGE_TAG = selectedTag
         }
     }
-    stage("Use Input") {
-        echo "User input: ${env.IMAGE_TAG}"
+    
+    
+    stage("Pull Selected Docker Image") {
+        echo """
+=============================
+User selected tag: ${userSelectedTag}
+=============================
+"""
+
+        String dockerImageReference = extractDockerImageReferenceForTag(userSelectedTag);
+
+        // This doesn't work b/c 'docker' command is not installed
+        //
+        docker.image(dockerImageReference).withRun("-e DB_ENV_NAME=gen12dvu_test -e FLYWAY_TASKS=info") {
+          // Nothing really
+        }
+
     }
+
+
   }
 } catch (err) {
   echo "in catch block"
