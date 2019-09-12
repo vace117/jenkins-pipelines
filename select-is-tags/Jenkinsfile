@@ -6,8 +6,8 @@ import groovy.json.JsonBuilder
 String userSelectedTag = null
 
 // ImageStream names. These should match the image names created by TeamCity
-env.DB_IMAGE_STREAM  = 'db-flying-squirrel-migrator'
-env.APP_IMAGE_STREAM = 'app-tomcat8'
+env.DB_IMAGE_STREAM  = "${env.APPLICATION_PREFIX}-flying-squirrel-migrator"
+env.APP_IMAGE_STREAM = "${env.APPLICATION_PREFIX}-web"
 
 // Name of the file where we store the downloaded DB ImageStream data
 env.DB_IMAGE_STREAM_METADATA_FILE = 'db-image-stream-metadata.json'
@@ -113,93 +113,118 @@ try {
     }
     
     
-    stage("Run DB Migrations") {
-        echo """
-=============================
-User selected tag: ${userSelectedTag}
-=============================
-"""
-        final String MIGRATIONS_JOB_NAME = "${env.DB_IMAGE_STREAM}-job"
+//     stage("Run DB Migrations") {
+//         echo """
+// =============================
+// User selected tag: ${userSelectedTag}
+// =============================
+// """
+//         final String MIGRATIONS_JOB_NAME = "${env.DB_IMAGE_STREAM}-job"
 
-        timeout(time: 5, unit: 'MINUTES') {
-          openshift.withCluster() {
-            openshift.withProject(env.PROJECT_NAME) {
+//         timeout(time: 5, unit: 'MINUTES') {
+//           openshift.withCluster() {
+//             openshift.withProject(env.PROJECT_NAME) {
 
-              // Delete this job if it already exists
-              //
-              def jobSelector = openshift.selector("job", MIGRATIONS_JOB_NAME)
-              if ( jobSelector.exists() ) {
-                echo "Deleting pre-existing ${MIGRATIONS_JOB_NAME}..."
-                jobSelector.delete()
-              }
+//               // Delete this job if it already exists
+//               //
+//               def jobSelector = openshift.selector("job", MIGRATIONS_JOB_NAME)
+//               if ( jobSelector.exists() ) {
+//                 echo "Deleting pre-existing ${MIGRATIONS_JOB_NAME}..."
+//                 jobSelector.delete()
+//               }
 
-              // Allow usage of the Image Stream with our Job, which is a Kubernetes Resource, rather than a native OpenShift resource
-              //    https://docs.openshift.com/container-platform/3.11/dev_guide/managing_images.html#using-is-with-k8s
-              //
-              sh "oc set image-lookup ${env.DB_IMAGE_STREAM}"
+//               // Allow usage of the Image Stream with our Job, which is a Kubernetes Resource, rather than a native OpenShift resource
+//               //    https://docs.openshift.com/container-platform/3.11/dev_guide/managing_images.html#using-is-with-k8s
+//               //
+//               sh "oc set image-lookup ${env.DB_IMAGE_STREAM}"
 
-              // Create and run the job
-              //
-              jobSelector = openshift.create([
-                "apiVersion": "batch/v1",
-                "kind": "Job",
+//               // Create and run the job
+//               //
+//               jobSelector = openshift.create([
+//                 "apiVersion": "batch/v1",
+//                 "kind": "Job",
 
-                "metadata": [
-                  "name": MIGRATIONS_JOB_NAME,
-                  "namespace": env.PROJECT_NAME
-                ],
+//                 "metadata": [
+//                   "name": MIGRATIONS_JOB_NAME,
+//                   "namespace": env.PROJECT_NAME
+//                 ],
 
-                "spec": [
-                  "backoffLimit": 1,
-                  "completions": 1,
-                  "parallelism": 1,
+//                 "spec": [
+//                   "backoffLimit": 1,
+//                   "completions": 1,
+//                   "parallelism": 1,
 
-                  "template": [
-                    "spec": [
-                      "containers": [
-                        [
-                          "name": MIGRATIONS_JOB_NAME,
-                          "env": [
-                            ["name": "DB_ENV_NAME",  "value": env.DB_ENV_NAME],
-                            ["name": "FLYWAY_TASKS", "value": "info"] // Just for testing
-                          ],
-                          "image": "${env.DB_IMAGE_STREAM}:${userSelectedTag}",
-                          "imagePullPolicy": "IfNotPresent"
-                        ]
-                      ],
-                      "restartPolicy": "Never"
-                    ]
+//                   "template": [
+//                     "spec": [
+//                       "containers": [
+//                         [
+//                           "name": MIGRATIONS_JOB_NAME,
+//                           "env": [
+//                             ["name": "DB_ENV_NAME",  "value": env.DB_ENV_NAME],
+//                             ["name": "FLYWAY_TASKS", "value": "info"] // Just for testing
+//                           ],
+//                           "image": "${env.DB_IMAGE_STREAM}:${userSelectedTag}",
+//                           "imagePullPolicy": "IfNotPresent"
+//                         ]
+//                       ],
+//                       "restartPolicy": "Never"
+//                     ]
 
-                  ]
-                ]
-              ])
-              echo "Job Created:"
-              jobSelector.describe()
+//                   ]
+//                 ]
+//               ])
+//               echo "Job Created:"
+//               jobSelector.describe()
 
-              // Get the Pod scheduled to run this job, and wait for it to run or fail
-              //
-              echo "Finding related pod:"
-              def podSelector = jobSelector.related( 'pods' )
-              podSelector.describe()
-              podSelector.untilEach {
-                def podStatus = it.object().status
-                echo "${MIGRATIONS_JOB_NAME} container statuses:\n ${_debugPrintObject(podStatus.containerStatuses)}"
-                ['Running', 'Failed'].contains(podStatus.phase)
-              }
+//               // Get the Pod scheduled to run this job, and wait for it to run or fail
+//               //
+//               echo "Finding related pod:"
+//               def podSelector = jobSelector.related( 'pods' )
+//               podSelector.describe()
+//               podSelector.untilEach {
+//                 def podStatus = it.object().status
+//                 echo "${MIGRATIONS_JOB_NAME} container statuses:\n ${_debugPrintObject(podStatus.containerStatuses)}"
+//                 ['Running', 'Failed'].contains(podStatus.phase)
+//               }
 
-              // Follow the logs of this pod
-              //
-              podSelector.logs("--follow")
-            }
-          }
-        }
+//               // Follow the logs of this pod
+//               //
+//               podSelector.logs("--follow")
+//             }
+//           }
+//         }
 
-        echo "Database Migrations applied successfully!"
-    }
+//         echo "Database Migrations applied successfully!"
+//     }
 
 
     stage("Deploy Application") {
-      // TODO
+        timeout(time: 5, unit: 'MINUTES') {
+          openshift.withCluster() {
+            openshift.withProject(env.PROJECT_NAME) {
+              
+              // Patch the DeploymentConfig object on the server
+              //
+              def deploymentConfig = openshift.selector("dc/${env.APPLICATION_PREFIX}-web").object()
+              def imageChangeParams = deploymentConfig.spec.triggers[1].imageChangeParams
+              imageChangeParams.from['name'] = "${env.APP_IMAGE_STREAM}:${userSelectedTag}"
+              echo "Patching DeploymentConfig in the OpenShift Project:\n${_debugPrintObject(imageChangeParams)}"
+              openshift.apply(deploymentConfig)
+
+              // Re-deploy the application
+              //
+              echo "Starting application deployment..."
+              openshift.selector("dc/${env.APPLICATION_PREFIX}-web").rollout().latest()
+              def latestDeploymentVersion = openshift.selector("dc/${env.APPLICATION_PREFIX}-web").object().status.latestVersion
+              def replicationController   = openshift.selector("rc/${env.APPLICATION_PREFIX}-web-${latestDeploymentVersion}")
+              replicationController.untilEach(1){
+                  def rcMap = it.object()
+                  echo "Replication Controller Status:\n ${_debugPrintObject(rcMap.status)}"
+                  return (rcMap.status.replicas.equals(rcMap.status.readyReplicas))
+              }
+            }
+          }
+        }
     }
 
   }
