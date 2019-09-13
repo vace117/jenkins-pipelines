@@ -8,6 +8,8 @@ metadata:
     openshift.io/long-description: Creates an environment that allows the user to deploy and run any DryDock application by selecting the desired version.
     openshift.io/provider-display-name: Val Blant
   name: drydock-manual-deployment-template
+
+  
 parameters:
 - name: APPLICATION_PREFIX
   description: Application Name, such as 'dfip', 'appeds', 'ash', 'ari', etc
@@ -33,6 +35,9 @@ parameters:
   displayName: config.yml Target Environment
   required: true
   value: gen12dvu
+
+
+
 objects:
 - apiVersion: v1
   kind: ConfigMap
