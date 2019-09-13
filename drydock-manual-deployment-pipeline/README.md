@@ -23,5 +23,14 @@ The pipeline expects 2 parameters:
   * Create new web application objects: 
     * `$ oc process -f drydock-manual-deployment-template.yml -p APPLICATION_PREFIX=dfip | oc create -f -`
 
+# Create and run the pipeline
+```
+$ oc new-build https://github.com/vace117/jenkins-pipelines
+    --strategy=pipeline
+    --name=application-deployment-pipeline
+    --context-dir=drydock-manual-deployment-pipeline
+    --build-env APPLICATION_PREFIX=dfip
+    --build-env DB_ENV_NAME=gen12dvu
+```
 
 This pipeline works together with the `drydock-manual-deployment-pipeline.yml`
