@@ -16,12 +16,12 @@ The pipeline expects 2 parameters:
 
   Both `ImageStreams` must contain **THE SAME** tags.
 
-* All objects created from `drydock-manual-deployment-pipeline.yml`
+* **Web Application Objects**, created from `drydock-manual-deployment-pipeline.yml`
   * Delete all existing web application objects: 
     * `$ oc delete all,configmap --selector app=dfip` 
   
   * Create new web application objects: 
-    * `$ oc process -f drydock-manual-deployment-template.yaml -p APPLICATION_PREFIX=dfip | oc create -f -`
+    * `$ oc process -f drydock-manual-deployment-template.yml -p APPLICATION_PREFIX=dfip | oc create -f -`
 
 
 This pipeline works together with the `drydock-manual-deployment-pipeline.yml`
