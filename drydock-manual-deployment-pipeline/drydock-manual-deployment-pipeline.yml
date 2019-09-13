@@ -1,0 +1,166 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  annotations:
+    description: |-
+      Creates an environment that allows the user to deploy and run any DryDock application by selecting the desired version.
+    openshift.io/display-name: DryDock Application Environment - Manual Deployment
+    openshift.io/long-description: Creates an environment that allows the user to deploy and run any DryDock application by selecting the desired version.
+    openshift.io/provider-display-name: Val Blant
+  name: drydock-manual-deployment-template
+parameters:
+- name: APPLICATION_PREFIX
+  description: Application Name, such as 'dfip', 'appeds', 'ash', 'ari', etc
+  displayName: Abbreviated Application Name (lower case)
+  required: true
+- name: DATASOURCE_URL
+  description: Database URL
+  displayName: Database URL
+  required: true
+  value: jdbc:log4jdbc:oracle:thin:@pasdev.agr.gc.ca:1687/gen12dvu
+- name: DATASOURCE_USERNAME
+  description: Database User Name
+  displayName: Database User Name
+  required: true
+  value: dfip6030_user
+- name: DATASOURCE_PASSWORD
+  description: Database User Password
+  displayName: Database User Password
+  required: true
+  value: a235E6cad8
+- name: FLYING_SQUIRREL_MIGRATOR_TARGET_ENV
+  description: Target database environment name from 'config.yml' in your application's Database project
+  displayName: config.yml Target Environment
+  required: true
+  value: gen12dvu
+objects:
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    labels:
+      app: ${APPLICATION_PREFIX}
+    name: ${APPLICATION_PREFIX}-config-map
+  data:
+    DATASOURCE_DRIVER_CLASS_NAME: net.sf.log4jdbc.DriverSpy
+    DATASOURCE_URL:               ${DATASOURCE_URL}
+    DATASOURCE_USERNAME:          ${DATASOURCE_USERNAME}
+    DATASOURCE_PASSWORD:          ${DATASOURCE_PASSWORD}
+    DB_ENV_NAME:                  ${FLYING_SQUIRREL_MIGRATOR_TARGET_ENV}
+
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: ${APPLICATION_PREFIX}
+    name: ${APPLICATION_PREFIX}-web
+  spec:
+    replicas: 1
+    selector:
+      app: ${APPLICATION_PREFIX}
+      deploymentconfig: ${APPLICATION_PREFIX}-web
+    strategy:
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_PREFIX}
+          deploymentconfig: ${APPLICATION_PREFIX}-web
+      spec:
+        containers:
+        - name: ${APPLICATION_PREFIX}-web
+
+          envFrom:
+          - configMapRef:
+              name: ${APPLICATION_PREFIX}-config-map
+
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /WILL_BE_SET_BY_JENKINS
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 90
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /WILL_BE_SET_BY_JENKINS
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 50
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 60
+
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: "1"
+              memory: 1.5Gi
+
+          imagePullPolicy: Always
+
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+    test: false
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: false
+        containerNames:
+          - ${APPLICATION_PREFIX}-web
+        from:
+          kind: ImageStreamTag
+          name: ${APPLICATION_PREFIX}-web:latest
+      type: ImageChange
+
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    labels:
+      app: ${APPLICATION_PREFIX}
+    name: ${APPLICATION_PREFIX}-web
+  spec:
+    path: /WILL_BE_SET_BY_JENKINS
+    port:
+      targetPort: 8080-tcp
+    to:
+      kind: Service
+      name: ${APPLICATION_PREFIX}-web
+      weight: 100
+    wildcardPolicy: None
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: ${APPLICATION_PREFIX}
+    name: ${APPLICATION_PREFIX}-web
+  spec:
+    ports:
+    - name: 8080-tcp
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      deploymentconfig: ${APPLICATION_PREFIX}-web
+    sessionAffinity: None
+    type: ClusterIP
