@@ -25,11 +25,11 @@ The pipeline expects 2 parameters:
 
 # Create and run the pipeline
 ```
-$ oc new-build https://github.com/vace117/jenkins-pipelines
-    --strategy=pipeline
-    --name=application-deployment-pipeline
-    --context-dir=drydock-manual-deployment-pipeline
-    --build-env APPLICATION_PREFIX=dfip
+oc new-build https://github.com/vace117/jenkins-pipelines \
+    --strategy=pipeline \
+    --name=application-deployment-pipeline \
+    --context-dir=drydock-manual-deployment-pipeline \
+    --build-env APPLICATION_PREFIX=dfip \
     --build-env DB_ENV_NAME=gen12dvu
 ```
 
