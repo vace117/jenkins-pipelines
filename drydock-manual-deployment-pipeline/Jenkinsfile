@@ -252,9 +252,8 @@ User selected tag: ${userSelectedTag}
                     "-p", "DATASOURCE_PASSWORD=${jdbcConnectInfo.DATASOURCE_PASSWORD}"
                   )
 
-                  processedObjects.each {
-                    echo _debugPrintObject(it)
-                  }
+                  def fromJSON = openshift.create( processedObjects )
+                  echo "Created objects from JSON file: ${fromJSON.names()}"
                 }
                 else {
                   echo "DeploymentConfig for ${webAppName} already exists. Skipping template processing, but updating configmap..."
