@@ -16,13 +16,6 @@ The pipeline expects 2 parameters:
 
   Both `ImageStreams` must contain **THE SAME** tags.
 
-* **Web Application Objects**, created from `drydock-manual-deployment-pipeline.yml`
-  * Delete all existing web application objects: 
-    * `$ oc delete all,configmap --selector app=dfip` 
-  
-  * Create new web application objects: 
-    * `$ oc process -f drydock-manual-deployment-template.yml -p APPLICATION_PREFIX=dfip | oc create -f -`
-
 # Create and run the pipeline
 ```
 oc new-build https://github.com/vace117/jenkins-pipelines \
@@ -33,4 +26,14 @@ oc new-build https://github.com/vace117/jenkins-pipelines \
     --build-env DB_ENV_NAME=gen12dvu \
 ```
 
-This pipeline works together with the `drydock-manual-deployment-pipeline.yml`
+This pipeline works together with the `drydock-manual-deployment-template.yml`
+
+# Manual Template Usage
+If you wish to use `drydock-manual-deployment-template.yml` manually from the command-line, you can do so as follows:
+
+* Delete all existing web application objects: 
+  * `$ oc delete all,configmap --selector app=$APPLICATION_PREFIX` 
+  
+* Create new web application objects: 
+  * `$ oc process -f drydock-manual-deployment-template.yml -p APPLICATION_PREFIX=dfip | oc create -f -`
+
