@@ -253,7 +253,7 @@ User selected tag: ${userSelectedTag}
                   )
 
                   processedObjects.each {
-                    it.describe()
+                    echo _debugPrintObject(it)
                   }
                 }
                 else {
