@@ -245,7 +245,7 @@ User selected tag: ${userSelectedTag}
                   // Create brand new resources using the template
                   //
                   def processedObjects = openshift.process(
-                    readFile('drydock-manual-deployment-pipeline/drydock-manual-deployment-template.yml'), 
+                    readFile("${workspace}@script/drydock-manual-deployment-pipeline/drydock-manual-deployment-template.yml"), 
                     "-p", "APPLICATION_PREFIX=${env.APPLICATION_PREFIX}",
                     "-p", "DATASOURCE_URL=${jdbcConnectInfo.DATASOURCE_URL}",
                     "-p", "DATASOURCE_USERNAME=${jdbcConnectInfo.DATASOURCE_USERNAME}",
