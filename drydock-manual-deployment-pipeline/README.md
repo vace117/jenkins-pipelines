@@ -30,7 +30,7 @@ oc new-build https://github.com/vace117/jenkins-pipelines \
     --name=application-deployment-pipeline \
     --context-dir=drydock-manual-deployment-pipeline \
     --build-env APPLICATION_PREFIX=dfip \
-    --build-env DB_ENV_NAME=gen12dvu
+    --build-env DB_ENV_NAME=gen12dvu \
 ```
 
 This pipeline works together with the `drydock-manual-deployment-pipeline.yml`

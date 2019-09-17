@@ -30,11 +30,6 @@ parameters:
   displayName: Database User Password
   required: true
   value: a235E6cad8
-- name: FLYING_SQUIRREL_MIGRATOR_TARGET_ENV
-  description: Target database environment name from 'config.yml' in your application's Database project
-  displayName: config.yml Target Environment
-  required: true
-  value: gen12dvu
 
 
 
@@ -50,7 +45,6 @@ objects:
     DATASOURCE_URL:               ${DATASOURCE_URL}
     DATASOURCE_USERNAME:          ${DATASOURCE_USERNAME}
     DATASOURCE_PASSWORD:          ${DATASOURCE_PASSWORD}
-    DB_ENV_NAME:                  ${FLYING_SQUIRREL_MIGRATOR_TARGET_ENV}
 
 - apiVersion: apps.openshift.io/v1
   kind: DeploymentConfig

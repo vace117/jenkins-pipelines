@@ -1,6 +1,7 @@
-import groovy.json.JsonSlurper
+import groovy.json.JsonSlurperClassic
 import net.sf.json.JSONObject
 import groovy.json.JsonBuilder
+import java.util.regex.Matcher
 
 // This will be populated with the user-selected Image Tag
 String userSelectedTag = null
@@ -8,6 +9,7 @@ String userSelectedTag = null
 // ImageStream names. These should match the image names created by TeamCity
 env.DB_IMAGE_STREAM  = "${env.APPLICATION_PREFIX}-flying-squirrel-migrator"
 env.APP_IMAGE_STREAM = "${env.APPLICATION_PREFIX}-web"
+String webAppName = env.APP_IMAGE_STREAM
 
 // Name of the file where we store the downloaded DB ImageStream data
 env.DB_IMAGE_STREAM_METADATA_FILE = 'db-image-stream-metadata.json'
@@ -20,7 +22,7 @@ String _debugPrintObject(object) { new JsonBuilder(object).toPrettyString() }
 /**
  * Saves ImageStream metadata for the given name into a file in the workspace
  */
-void initDbImageStreamMetaData(String imageStreamName) {
+void _initDbImageStreamMetaData(String imageStreamName) {
     // Get ImageStream data in JSON format
     //
     String result = sh( 
@@ -32,22 +34,22 @@ void initDbImageStreamMetaData(String imageStreamName) {
     //
     writeJSON(
       file: env.DB_IMAGE_STREAM_METADATA_FILE, 
-      json: new JSONObject(new JsonSlurper().parseText(result))
+      json: new JSONObject(new JsonSlurperClassic().parseText(result))
     )
 }
 
 /**
  * Reads ImageStream metadata from file
  */
-def getImageStreamMetadata() {
+def _getImageStreamMetadata() {
   readJSON(file: env.DB_IMAGE_STREAM_METADATA_FILE)
 }
 
 /**
  * Returns a list of '\n' separated tags available in the specified image stream
  */
-String extractImageStreamTags() {
-    List tags = getImageStreamMetadata().spec?.tags
+String _extractImageStreamTags() {
+    List tags = _getImageStreamMetadata().spec?.tags
     if ( tags && !tags.isEmpty() ) {
       String parsedOutTags = tags
                               .collect { it.name }
@@ -66,7 +68,91 @@ ${parsedOutTags}
     }
 }
 
+/**
+ * Executes Flying Squirrel Migrator Gradle tasks from the specified Docker image, with specified command-line parameters.
+ *
+ * Returns the console output from the executed Docker image
+ */
+String _runFlyingSquirrelMigratorJob(String imageStreamName, String imageStreamTag, String envName, String tasks) {
+  final String MIGRATIONS_JOB_NAME = "${imageStreamName}-job"
 
+  // Delete this job if it already exists
+  //
+  def jobSelector = openshift.selector("job", MIGRATIONS_JOB_NAME)
+  if ( jobSelector.exists() ) {
+    echo "Deleting pre-existing ${MIGRATIONS_JOB_NAME}..."
+    jobSelector.delete()
+  }
+
+  // Allow usage of the Image Stream with our Job, which is a Kubernetes Resource, rather than a native OpenShift resource
+  //    https://docs.openshift.com/container-platform/3.11/dev_guide/managing_images.html#using-is-with-k8s
+  //
+  sh "oc set image-lookup ${imageStreamName}"
+
+  // Create and run the job
+  //
+  jobSelector = openshift.create([
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+
+    "metadata": [
+      "name": MIGRATIONS_JOB_NAME
+    ],
+
+    "spec": [
+      "backoffLimit": 1,
+      "completions": 1,
+      "parallelism": 1,
+
+      "template": [
+        "spec": [
+          "containers": [
+            [
+              "name": MIGRATIONS_JOB_NAME,
+              "env": [
+                ["name": "DB_ENV_NAME",  "value": envName],
+                ["name": "FLYWAY_TASKS", "value": tasks]
+              ],
+              "image": "${imageStreamName}:${imageStreamTag}",
+              "imagePullPolicy": "IfNotPresent"
+            ]
+          ],
+          "restartPolicy": "Never"
+        ]
+
+      ]
+    ]
+  ])
+  echo "Job Created:"
+  jobSelector.describe()
+
+  // Get the Pod scheduled to run this job, and wait for it to run or fail
+  //
+  echo "Finding related pod:"
+  def podSelector = jobSelector.related('pods')
+  podSelector.describe()
+  podSelector.untilEach {
+    def podStatus = it.object().status
+    echo "${MIGRATIONS_JOB_NAME} container statuses:\n ${_debugPrintObject(podStatus.containerStatuses)}"
+    ['Running', 'Failed'].contains(podStatus.phase)
+  }
+
+  // Follow the logs of this pod
+  //
+  def result = podSelector.logs("--follow")
+  return result?.actions?.last()?.out ?: ""
+}
+
+@NonCPS
+def _parseJdbcConnectInfo(String consoleOutput) {
+  def matcher = (consoleOutput =~ /(?ms).+JDBC connect info.+?(\{.*\})/)
+  if ( matcher.hasGroup() && matcher.size() == 1 && matcher[0].size() == (1+1) ) {
+    return new JsonSlurperClassic().parseText(matcher[0][1])
+  }
+  else {
+    return false
+  }
+}
 
 /** ************************************************************************************
  *                               Pipeline code starts here
@@ -91,7 +177,7 @@ try {
 
             // Initialize ImageStream metadata
             //
-            initDbImageStreamMetaData(env.DB_IMAGE_STREAM);
+            _initDbImageStreamMetaData(env.DB_IMAGE_STREAM);
 
           }
         }  
@@ -105,195 +191,179 @@ try {
 
           // Pops up a window with a drop-down to collect user input
           //
-          // userSelectedTag = 'Build-6.3.0.1'
-          userSelectedTag = input(
-            message: 'Select the Build Number you wish to deploy', 
-            ok: 'Next', 
-            parameters: [
-              choice(name: 'IMAGE_TAG', choices: extractImageStreamTags(), description: 'Build Number to deploy')
-            ]
-          )
-        }
-    }
-    
-    
-    stage("Run DB Migrations") {
-        echo """
+          userSelectedTag = 'Build-6.3.0.4'
+          // userSelectedTag = input(
+          //   message: 'Select the Build Number you wish to deploy', 
+          //   ok: 'Next', 
+          //   parameters: [
+          //     choice(name: 'IMAGE_TAG', choices: _extractImageStreamTags(), description: 'Build Number to deploy')
+          //   ]
+          // )
+          echo """
 =============================
 User selected tag: ${userSelectedTag}
 =============================
 """
-        final String MIGRATIONS_JOB_NAME = "${env.DB_IMAGE_STREAM}-job"
+        }
+    }
+    
+    
+    // stage("Run DB Migrations") {
+    //     timeout(time: 5, unit: 'MINUTES') {
+    //       openshift.withCluster() {
+    //         openshift.withProject(env.PROJECT_NAME) {
+    //           _runFlyingSquirrelMigratorJob(env.DB_IMAGE_STREAM, userSelectedTag, env.DB_ENV_NAME, "info")
+    //         }
+    //       }
+    //     }
 
-        timeout(time: 5, unit: 'MINUTES') {
+    //     echo "Database Migrations applied successfully!"
+    // }
+
+
+    stage("Create Web Application") {
+        timeout(time: 1, unit: 'MINUTES') {
           openshift.withCluster() {
             openshift.withProject(env.PROJECT_NAME) {
 
-              // Delete this job if it already exists
+              // Get JDBC Connect Info from the Flying Squirrel Migrator image
               //
-              def jobSelector = openshift.selector("job", MIGRATIONS_JOB_NAME)
-              if ( jobSelector.exists() ) {
-                echo "Deleting pre-existing ${MIGRATIONS_JOB_NAME}..."
-                jobSelector.delete()
+              String consoleOutput = _runFlyingSquirrelMigratorJob(env.DB_IMAGE_STREAM, userSelectedTag, env.DB_ENV_NAME, "jdbcConnectInfo")
+              def jdbcConnectInfo = _parseJdbcConnectInfo(consoleOutput)
+              if ( jdbcConnectInfo ) {
+                echo "Deploying application with the following Datasource configuration:\n${_debugPrintObject(jdbcConnectInfo)}"
+
+                // Create all resources for the app
+                //
+                if ( !openshift.selector("dc", webAppName).exists() ) {
+                  echo "${webAppName} does not exist in ${env.PROJECT_NAME}. Creating..."                
+
+                  // Just in case, delete everything first
+                  //
+                  sh "oc delete all,configmap --selector app=${env.APPLICATION_PREFIX}"
+
+                  // Create brand new resources using the template
+                  //
+                  def processedObjects = openshift.process(
+                    readFile('drydock-manual-deployment-pipeline/drydock-manual-deployment-template.yml'), 
+                    "-p", "APPLICATION_PREFIX=${env.APPLICATION_PREFIX}",
+                    "-p", "DATASOURCE_URL=${jdbcConnectInfo.DATASOURCE_URL}",
+                    "-p", "DATASOURCE_USERNAME=${jdbcConnectInfo.DATASOURCE_USERNAME}",
+                    "-p", "DATASOURCE_PASSWORD=${jdbcConnectInfo.DATASOURCE_PASSWORD}"
+                  )
+
+                  processedObjects.each {
+                    it.describe()
+                  }
+                }
+                else {
+                  echo "DeploymentConfig for ${webAppName} already exists. Skipping template processing, but updating configmap..."
+                  def configmap = openshift.selector("configmap", "${env.APPLICATION_PREFIX}-config-map").object()
+                  configmap['data'] = jdbcConnectInfo
+                  openshift.apply(configmap)
+                  echo _debugPrintObject(configmap)
+                }
+              }
+              else {
+                error("Could not parse JDBC Connect Info from: \n${consoleOutput}")
               }
 
-              // Allow usage of the Image Stream with our Job, which is a Kubernetes Resource, rather than a native OpenShift resource
-              //    https://docs.openshift.com/container-platform/3.11/dev_guide/managing_images.html#using-is-with-k8s
-              //
-              sh "oc set image-lookup ${env.DB_IMAGE_STREAM}"
-
-              // Create and run the job
-              //
-              jobSelector = openshift.create([
-                "apiVersion": "batch/v1",
-                "kind": "Job",
-
-                "metadata": [
-                  "name": MIGRATIONS_JOB_NAME,
-                  "namespace": env.PROJECT_NAME
-                ],
-
-                "spec": [
-                  "backoffLimit": 1,
-                  "completions": 1,
-                  "parallelism": 1,
-
-                  "template": [
-                    "spec": [
-                      "containers": [
-                        [
-                          "name": MIGRATIONS_JOB_NAME,
-                          "env": [
-                            ["name": "DB_ENV_NAME",  "value": env.DB_ENV_NAME],
-                            ["name": "FLYWAY_TASKS", "value": "info"] // Just for testing
-                          ],
-                          "image": "${env.DB_IMAGE_STREAM}:${userSelectedTag}",
-                          "imagePullPolicy": "IfNotPresent"
-                        ]
-                      ],
-                      "restartPolicy": "Never"
-                    ]
-
-                  ]
-                ]
-              ])
-              echo "Job Created:"
-              jobSelector.describe()
-
-              // Get the Pod scheduled to run this job, and wait for it to run or fail
-              //
-              echo "Finding related pod:"
-              def podSelector = jobSelector.related('pods')
-              podSelector.describe()
-              podSelector.untilEach {
-                def podStatus = it.object().status
-                echo "${MIGRATIONS_JOB_NAME} container statuses:\n ${_debugPrintObject(podStatus.containerStatuses)}"
-                ['Running', 'Failed'].contains(podStatus.phase)
-              }
-
-              // Follow the logs of this pod
-              //
-              podSelector.logs("--follow")
             }
           }
         }
-
-        echo "Database Migrations applied successfully!"
     }
 
 
-    stage("Deploy Application") {
-        timeout(time: 5, unit: 'MINUTES') {
-          openshift.withCluster() {
-            openshift.withProject(env.PROJECT_NAME) {
+//     stage("Deploy Application") {
+//         timeout(time: 5, unit: 'MINUTES') {
+//           openshift.withCluster() {
+//             openshift.withProject(env.PROJECT_NAME) {
               
-              String webAppName = env.APP_IMAGE_STREAM
+//               // Patch the DeploymentConfig object on the server
+//               //
+//               def deploymentConfigSelector = openshift.selector("dc", webAppName)
+//               def imageChangeParams = deploymentConfigSelector.object().spec.triggers[1].imageChangeParams
+//               imageChangeParams.from['name'] = "${env.APP_IMAGE_STREAM}:${userSelectedTag}"
+//               echo "Patched DeploymentConfig 'imageChangeParams':\n${_debugPrintObject(imageChangeParams)}"
+//               openshift.apply(deploymentConfigSelector.object())
 
-              // Patch the DeploymentConfig object on the server
-              //
-              def deploymentConfigSelector = openshift.selector("dc", webAppName)
-              def imageChangeParams = deploymentConfigSelector.object().spec.triggers[1].imageChangeParams
-              imageChangeParams.from['name'] = "${env.APP_IMAGE_STREAM}:${userSelectedTag}"
-              echo "Patched DeploymentConfig 'imageChangeParams':\n${_debugPrintObject(imageChangeParams)}"
-              openshift.apply(deploymentConfigSelector.object())
+//               // Patch the Route and Probes in the DeploymentConfig to update the Context Root with UPPER CASE application name
+//               //
+//               def newContextRoot = "/${env.APPLICATION_PREFIX.toUpperCase()}"
+//               sh (/oc patch route ${webAppName} -p '
+//                 {
+//                   "spec": {
+//                     "path": "${newContextRoot}"
+//                   }
+//                 }'
+//               /)
+//               echo "Patched Route:"
+//               openshift.selector("route", webAppName).describe()
 
-              // Patch the Route and Probes in the DeploymentConfig to update the Context Root with UPPER CASE application name
-              //
-              def newContextRoot = "/${env.APPLICATION_PREFIX.toUpperCase()}"
-              sh (/oc patch route ${webAppName} -p '
-                {
-                  "spec": {
-                    "path": "${newContextRoot}"
-                  }
-                }'
-              /)
-              echo "Patched Route:"
-              openshift.selector("route", webAppName).describe()
+//               sh (/oc patch dc ${webAppName} -p '
+//                 {
+//                   "spec": {
+//                     "template": {
+//                       "spec": {
+//                         "containers": [
+//                           {
+//                             "name": "${webAppName}",
+//                             "livenessProbe": {
+//                               "httpGet": {
+//                                 "path": "${newContextRoot}\/login.jsf"
+//                               }
+//                             },
+//                             "readinessProbe": {
+//                               "httpGet": {
+//                                 "path": "${newContextRoot}\/login.jsf"
+//                               }
+//                             }
+//                           }
+//                         ]
+//                       }
+//                     }
+//                   }
+//                 }'
+//               /)
 
-              sh (/oc patch dc ${webAppName} -p '
-                {
-                  "spec": {
-                    "template": {
-                      "spec": {
-                        "containers": [
-                          {
-                            "name": "${webAppName}",
-                            "livenessProbe": {
-                              "httpGet": {
-                                "path": "${newContextRoot}\/login.jsf"
-                              }
-                            },
-                            "readinessProbe": {
-                              "httpGet": {
-                                "path": "${newContextRoot}\/login.jsf"
-                              }
-                            }
-                          }
-                        ]
-                      }
-                    }
-                  }
-                }'
-              /)
+//               def dcContainer = deploymentConfigSelector.object().spec.template.spec.containers[0]
+//               echo "Patched Liveness Probe: \n ${_debugPrintObject(dcContainer.livenessProbe)}"
+//               echo "Patched Readiness Probe:\n ${_debugPrintObject(dcContainer.readinessProbe)}"
 
-              def dcContainer = deploymentConfigSelector.object().spec.template.spec.containers[0]
-              echo "Patched Liveness Probe: \n ${_debugPrintObject(dcContainer.livenessProbe)}"
-              echo "Patched Readiness Probe:\n ${_debugPrintObject(dcContainer.readinessProbe)}"
+//               // Start application re-deploy
+//               //
+//               echo "Starting application deployment..."
+//               def rolloutManager = deploymentConfigSelector.rollout()
+//               rolloutManager.latest() // Start the rollout
 
-              // Start application re-deploy
-              //
-              echo "Starting application deployment..."
-              def rolloutManager = deploymentConfigSelector.rollout()
-              rolloutManager.latest() // Start the rollout
+//               // Monitor the ReplicationController doing the re-deploy
+//               //
+//               def latestDeploymentVersion = deploymentConfigSelector.object().status.latestVersion
+//               String replicationControllerName = "${webAppName}-${latestDeploymentVersion}"
+//               echo "Monitoring Replication Controller '${replicationControllerName}'..."
+//               def replicationController = openshift.selector("rc", replicationControllerName)
+//               replicationController.untilEach(1) {
+//                   def rcStatus = it.object().status
+//                   echo "Replication Controller Status:\n ${_debugPrintObject(rcStatus)}"
+//                   return rcStatus.replicas == rcStatus.readyReplicas
+//               }
+//               rolloutManager.status("-w")
 
-              // Monitor the ReplicationController doing the re-deploy
-              //
-              def latestDeploymentVersion = deploymentConfigSelector.object().status.latestVersion
-              String replicationControllerName = "${webAppName}-${latestDeploymentVersion}"
-              echo "Monitoring Replication Controller '${replicationControllerName}'..."
-              def replicationController = openshift.selector("rc", replicationControllerName)
-              replicationController.untilEach(1) {
-                  def rcStatus = it.object().status
-                  echo "Replication Controller Status:\n ${_debugPrintObject(rcStatus)}"
-                  return rcStatus.replicas == rcStatus.readyReplicas
-              }
-              rolloutManager.status("-w")
-
-              // Print the logs of the pod where the application is now running
-              //
-              def podSelector = deploymentConfigSelector.related('pods')
-              echo "Application deployed inside this pod:"
-              podSelector.describe()
-              echo """
-====================================
-Application Startup Logs
-====================================              
-"""
-              podSelector.logs()
-            }
-          }
-        }
-    }
+//               // Print the logs of the pod where the application is now running
+//               //
+//               def podSelector = deploymentConfigSelector.related('pods')
+//               echo "Application deployed inside this pod:"
+//               podSelector.describe()
+//               echo """
+// ====================================
+// Application Startup Logs
+// ====================================              
+// """
+//               podSelector.logs()
+//             }
+//           }
+//         }
+//     }
 
   }
 } catch (err) {
