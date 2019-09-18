@@ -12,7 +12,14 @@ String userSelectedTag = null
 //
 env.DB_IMAGE_STREAM  = "${env.APPLICATION_PREFIX}-flying-squirrel-migrator"
 env.APP_IMAGE_STREAM = "${env.APPLICATION_PREFIX}-web"
+
+// Object name used when creating OpenShift objects
+//
 String webAppName = env.APP_IMAGE_STREAM
+
+// This will be set to represent the name of the target database schema
+//
+String targetSchema = null
 
 // Name of the file where we store the downloaded DB ImageStream data
 //
@@ -79,8 +86,12 @@ ${parsedOutTags}
  *
  * Returns the console output from the executed Docker image
  */
-String _runFlyingSquirrelMigratorJob(String imageStreamName, String imageStreamTag, String envName, String tasks) {
+String _runFlyingSquirrelMigratorJob(String imageStreamName, String imageStreamTag, String envName, String tasks, String targetSchema = null) {
   final String MIGRATIONS_JOB_NAME = "${imageStreamName}-job"
+
+  if ( targetSchema ) {
+    tasks = "-PSCHEMA=${targetSchema} " + tasks
+  }
 
   // Delete this job if it already exists
   //
@@ -173,7 +184,10 @@ try {
       openshift.withCluster() {
           openshift.withProject(null) {
             env.PROJECT_NAME = openshift.project()
-            echo "Detected OpenShift Project: ${env.PROJECT_NAME}"
+            echo "OpenShift Project Name: ${env.PROJECT_NAME}"
+            
+            targetSchema = "${env.APPLICATION_PREFIX.toUpperCase()}_${env.PROJECT_NAME.replaceAll('-', '_').toUppserCase()}"
+            echo "Target Database Schema: ${targetSchema}@${env.DB_ENV_NAME}"
           }
       }
     }
@@ -200,7 +214,7 @@ try {
 
           // Pops up a window with a drop-down to collect user input
           //
-          //userSelectedTag = 'Build-6.3.0.4'
+          //userSelectedTag = 'Build-6.3.0.5'
           userSelectedTag = input(
             message: 'Select the Build Number you wish to deploy', 
             ok: 'Next', 
@@ -221,7 +235,13 @@ User selected tag: ${userSelectedTag}
         timeout(time: 5, unit: 'MINUTES') {
           openshift.withCluster() {
             openshift.withProject(env.PROJECT_NAME) {
-              _runFlyingSquirrelMigratorJob(env.DB_IMAGE_STREAM, userSelectedTag, env.DB_ENV_NAME, "info")
+              _runFlyingSquirrelMigratorJob(
+                  env.DB_IMAGE_STREAM, 
+                  userSelectedTag, 
+                  env.DB_ENV_NAME, 
+                  "importAvieBaseline flywayRepair managedMigrate", 
+                  targetSchema
+              )
             }
           }
         }
@@ -237,7 +257,7 @@ User selected tag: ${userSelectedTag}
 
               // Get JDBC Connect Info from the Flying Squirrel Migrator image
               //
-              String consoleOutput = _runFlyingSquirrelMigratorJob(env.DB_IMAGE_STREAM, userSelectedTag, env.DB_ENV_NAME, "jdbcConnectInfo")
+              String consoleOutput = _runFlyingSquirrelMigratorJob(env.DB_IMAGE_STREAM, userSelectedTag, env.DB_ENV_NAME, "jdbcConnectInfo", targetSchema)
               def jdbcConnectInfo = _parseJdbcConnectInfo(consoleOutput)
               if ( jdbcConnectInfo ) {
                 echo "Deploying application with the following Datasource configuration:\n${_debugPrintObject(jdbcConnectInfo)}"
