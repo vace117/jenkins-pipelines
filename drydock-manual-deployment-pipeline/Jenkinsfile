@@ -30,7 +30,16 @@ env.DB_IMAGE_STREAM_METADATA_FILE = 'db-image-stream-metadata.json'
 /**
  * Debugging utility
  */
-String _debugPrintObject(object) { new JsonBuilder(object).toPrettyString() }
+String _debugPrintObject(object) { 
+  if ( object instanceof java.util.Collection ) {
+    String listJson = ""
+    object.each { listJson += new JsonBuilder(it).toPrettyString() + "\n\n" }
+    return listJson
+  }
+  else {
+    new JsonBuilder(object).toPrettyString() 
+  }
+}
 
 /**
  * Saves ImageStream metadata for the given name into a file in the workspace
