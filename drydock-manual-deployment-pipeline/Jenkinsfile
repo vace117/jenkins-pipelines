@@ -154,13 +154,18 @@ String _runFlyingSquirrelMigratorJob(String imageStreamName, String imageStreamT
     ['Running', 'Failed'].contains(podStatus.phase)
   }
 
+  // Follow the logs of this pod
+  //
+  def result = podSelector.logs("--follow")
+
   echo "========================="
   echo _debugPrintObject(podSelector)
   echo "========================="
 
-  // Follow the logs of this pod
-  //
-  def result = podSelector.logs("--follow")
+  echo "========================="
+  echo _debugPrintObject(jobSelector)
+  echo "========================="
+
   return result?.actions?.last()?.out ?: ""
 }
 
