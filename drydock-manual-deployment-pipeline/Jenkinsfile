@@ -159,11 +159,11 @@ String _runFlyingSquirrelMigratorJob(String imageStreamName, String imageStreamT
   def result = podSelector.logs("--follow")
 
   echo "========================="
-  echo _debugPrintObject(podSelector)
+  echo _debugPrintObject(podSelector.object())
   echo "========================="
 
   echo "========================="
-  echo _debugPrintObject(jobSelector)
+  echo _debugPrintObject(jobSelector.object())
   echo "========================="
 
   return result?.actions?.last()?.out ?: ""
@@ -223,14 +223,14 @@ try {
 
           // Pops up a window with a drop-down to collect user input
           //
-          //userSelectedTag = 'Build-6.3.0.5'
-          userSelectedTag = input(
-            message: 'Select the Build Number you wish to deploy', 
-            ok: 'Next', 
-            parameters: [
-              choice(name: 'IMAGE_TAG', choices: _extractImageStreamTags(), description: 'Build Number to deploy')
-            ]
-          )
+          userSelectedTag = 'Build-6.3.0.5'
+          // userSelectedTag = input(
+          //   message: 'Select the Build Number you wish to deploy', 
+          //   ok: 'Next', 
+          //   parameters: [
+          //     choice(name: 'IMAGE_TAG', choices: _extractImageStreamTags(), description: 'Build Number to deploy')
+          //   ]
+          // )
           echo """
 =============================
 User selected tag: ${userSelectedTag}
