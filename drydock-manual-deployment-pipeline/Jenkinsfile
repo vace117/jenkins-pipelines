@@ -186,7 +186,7 @@ try {
             env.PROJECT_NAME = openshift.project()
             echo "OpenShift Project Name: ${env.PROJECT_NAME}"
             
-            targetSchema = "${env.APPLICATION_PREFIX.toUpperCase()}_${env.PROJECT_NAME.replaceAll('-', '_').toUppserCase()}"
+            targetSchema = "${env.APPLICATION_PREFIX.toUpperCase()}_${env.PROJECT_NAME.replaceAll('-', '_').toUpperCase()}"
             echo "Target Database Schema: ${targetSchema}@${env.DB_ENV_NAME}"
           }
       }
